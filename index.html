@@ -34,6 +34,7 @@ button{
 }
 button:disabled{opacity:.45}
 .cameraBtn{background:var(--light);color:#111}
+.nativeCapture{display:none}
 .colorBtn{width:46px;min-width:46px;padding:0;border:3px solid transparent;position:relative}
 .colorBtn.chosen{border-color:#fff;box-shadow:0 0 0 2px #000 inset}
 .colorBtn.armed::after{content:"";position:absolute;inset:-7px;border:3px solid #fff;border-radius:15px;pointer-events:none}
@@ -56,24 +57,6 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
 .primary{background:var(--light);color:#111}
 .danger{background:#4a2020}
 
-/* In-app camera */
-.cameraScreen{
-  position:fixed;inset:0;z-index:1000;background:#000;
-  display:none;flex-direction:column;
-}
-.cameraScreen.open{display:flex}
-.videoWrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
-#cameraVideo{width:100%;height:100%;object-fit:cover}
-.cameraTop{position:absolute;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;display:flex;justify-content:flex-end;background:linear-gradient(rgba(0,0,0,.55),transparent)}
-.cameraBottom{padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:center;align-items:center;gap:20px;background:#050505}
-.shutter{width:72px;height:72px;border-radius:50%;background:#fff;border:6px solid #777;padding:0}
-.closeCam{background:rgba(40,40,40,.8);min-width:48px}
-.flashBtn{
-  position:absolute;top:calc(10px + env(safe-area-inset-top));left:12px;
-  min-width:92px;background:rgba(40,40,40,.82);z-index:2
-}
-.flashBtn.active{background:#f4f4f4;color:#111}
-.cameraMsg{font-size:13px;color:#ddd;position:absolute;bottom:10px;left:10px;right:10px;text-align:center;text-shadow:0 1px 2px #000}
 
 @media(max-width:560px){
   button{font-size:14px;padding:10px 12px}
@@ -93,6 +76,7 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
 
   <div class="toolbar">
     <button type="button" id="cameraBtn" class="cameraBtn">📷 Foto nemen</button>
+    <input id="nativeCapture" class="nativeCapture" type="file" accept="image/*" capture="environment">
 
     <button type="button" class="colorBtn green" data-color="#28c840" aria-label="Groen"></button>
     <button type="button" class="colorBtn orange" data-color="#ff9500" aria-label="Oranje"></button>
@@ -130,20 +114,6 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
   </div>
 </div>
 
-<div id="cameraScreen" class="cameraScreen">
-  <div class="videoWrap">
-    <video id="cameraVideo" autoplay playsinline muted></video>
-    <button id="flashBtn" class="flashBtn" type="button" style="display:none">⚡ Uit</button>
-    <div class="cameraTop">
-      <button id="closeCameraBtn" class="closeCam">✕</button>
-    </div>
-    <div id="cameraMsg" class="cameraMsg"></div>
-  </div>
-  <div class="cameraBottom">
-    <button id="shutterBtn" class="shutter" aria-label="Foto nemen"></button>
-  </div>
-</div>
-
 <script>
 (() => {
   const canvas = document.getElementById('canvas');
@@ -155,12 +125,7 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
 
   const cameraBtn = document.getElementById('cameraBtn');
   const retakeBtn = document.getElementById('retakeBtn');
-  const cameraScreen = document.getElementById('cameraScreen');
-  const cameraVideo = document.getElementById('cameraVideo');
-  const closeCameraBtn = document.getElementById('closeCameraBtn');
-  const shutterBtn = document.getElementById('shutterBtn');
-  const cameraMsg = document.getElementById('cameraMsg');
-  const flashBtn = document.getElementById('flashBtn');
+  const nativeCapture = document.getElementById('nativeCapture');
 
   const undoBtn = document.getElementById('undoBtn');
   const clearBtn = document.getElementById('clearBtn');
@@ -180,15 +145,8 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
   let moveState = null;
   let resizeState = null;
   let recolorMode = false;
-  let stream = null;
   let deferredInstallPrompt = null;
-  let cameraTrack = null;
-  let imageCapture = null;
-  let photoCapabilities = null;
-  let trackCapabilities = null;
-  let flashMode = 'off'; // off | auto | flash
-  let realFlashModes = [];
-  let torchSupported = false;
+  let currentObjectUrl = null;
 
   function showStatus(t){
     status.textContent=t;
@@ -313,14 +271,35 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
     canvas.style.touchAction='pan-y pinch-zoom';
   }
 
-  function setCapturedImageFromCanvas(sourceCanvas){
+  function releaseCurrentObjectUrl(){
+    if(currentObjectUrl){
+      URL.revokeObjectURL(currentObjectUrl);
+      currentObjectUrl=null;
+    }
+  }
+
+  function loadCapturedFile(file){
+    if(!file) return;
+
+    if(!file.type || !file.type.startsWith('image/')){
+      showStatus('Dit bestand is geen foto.');
+      nativeCapture.value='';
+      return;
+    }
+
+    releaseCurrentObjectUrl();
+    currentObjectUrl=URL.createObjectURL(file);
+
     const image=new Image();
     image.onload=()=>{
       img=image;
-      const maxDim=2600;
+
+      // Bewaar praktisch de volledige resolutie van moderne 12MP-foto's.
+      // Alleen extreem grote beelden worden beperkt om crashes op oudere gsm's te vermijden.
+      const maxDim=4096;
       const scale=Math.min(1,maxDim/Math.max(image.naturalWidth,image.naturalHeight));
-      canvas.width=Math.round(image.naturalWidth*scale);
-      canvas.height=Math.round(image.naturalHeight*scale);
+      canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));
+      canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
 
       rects=[];
       selected=-1;
@@ -334,286 +313,32 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
       resetColorSelection();
       redraw();
       updateButtons();
+
+      // Het bestand blijft alleen tijdelijk in het geheugen van deze pagina.
+      // De app slaat de onbewerkte opname nergens zelf op.
+      nativeCapture.value='';
     };
-    image.src=sourceCanvas.toDataURL('image/jpeg',0.95);
+    image.onerror=()=>{
+      showStatus('Foto kon niet geopend worden.');
+      releaseCurrentObjectUrl();
+      nativeCapture.value='';
+    };
+    image.src=currentObjectUrl;
   }
 
-
-  function setFlashButtonState(){
-    if(!flashBtn) return;
-
-    const anyFlash = realFlashModes.length > 0 || torchSupported;
-    flashBtn.style.display = anyFlash ? 'inline-flex' : 'none';
-
-    if(!anyFlash){
-      flashMode = 'off';
-      return;
-    }
-
-    const label = flashMode === 'auto' ? '⚡ Auto' :
-                  flashMode === 'flash' ? '⚡ Flits' : '⚡ Uit';
-    flashBtn.textContent = label;
-    flashBtn.classList.toggle('active', flashMode !== 'off');
+  function openNativeCamera(){
+    // capture="environment" vraagt de gewone achtercamera van de smartphone.
+    // Zoom, autofocus, flits, HDR, lenskeuze enz. worden door de telefoon/browser geregeld.
+    nativeCapture.click();
   }
 
-  function cycleFlashMode(){
-    if(realFlashModes.length){
-      const available = ['off'];
-      if(realFlashModes.includes('auto')) available.push('auto');
-      if(realFlashModes.includes('flash') || torchSupported) available.push('flash');
+  cameraBtn.addEventListener('click',openNativeCamera);
+  retakeBtn.addEventListener('click',openNativeCamera);
 
-      let idx = available.indexOf(flashMode);
-      idx = (idx + 1) % available.length;
-      flashMode = available[idx];
-    }else if(torchSupported){
-      flashMode = flashMode === 'flash' ? 'off' : 'flash';
-    }else{
-      flashMode = 'off';
-    }
-    setFlashButtonState();
-  }
-
-  async function setTorch(on){
-    if(!cameraTrack || !torchSupported) return false;
-    try{
-      await cameraTrack.applyConstraints({advanced:[{torch:!!on}]});
-      return true;
-    }catch(err){
-      console.warn('Torch niet beschikbaar:', err);
-      return false;
-    }
-  }
-
-  async function optimizeCamera(track){
-    let caps = {};
-    try{
-      caps = track.getCapabilities ? track.getCapabilities() : {};
-    }catch(err){
-      console.warn('Capabilities niet leesbaar:', err);
-    }
-
-    trackCapabilities = caps || {};
-    torchSupported = !!trackCapabilities.torch;
-
-    // Continue autofocus waar browser + camera dit expliciet ondersteunen.
-    try{
-      if(Array.isArray(trackCapabilities.focusMode) &&
-         trackCapabilities.focusMode.includes('continuous')){
-        await track.applyConstraints({advanced:[{focusMode:'continuous'}]});
-      }
-    }catch(err){
-      console.warn('Continuous autofocus kon niet worden ingesteld:', err);
-    }
-
-    // Laat belichting en witbalans continu bijsturen wanneer ondersteund.
-    try{
-      if(Array.isArray(trackCapabilities.exposureMode) &&
-         trackCapabilities.exposureMode.includes('continuous')){
-        await track.applyConstraints({advanced:[{exposureMode:'continuous'}]});
-      }
-    }catch(err){
-      console.warn('Continuous exposure kon niet worden ingesteld:', err);
-    }
-
-    try{
-      if(Array.isArray(trackCapabilities.whiteBalanceMode) &&
-         trackCapabilities.whiteBalanceMode.includes('continuous')){
-        await track.applyConstraints({advanced:[{whiteBalanceMode:'continuous'}]});
-      }
-    }catch(err){
-      console.warn('Continuous white balance kon niet worden ingesteld:', err);
-    }
-
-    imageCapture = null;
-    photoCapabilities = null;
-    realFlashModes = [];
-
-    if('ImageCapture' in window){
-      try{
-        imageCapture = new ImageCapture(track);
-        if(imageCapture.getPhotoCapabilities){
-          photoCapabilities = await imageCapture.getPhotoCapabilities();
-          if(photoCapabilities && Array.isArray(photoCapabilities.fillLightMode)){
-            realFlashModes = photoCapabilities.fillLightMode.slice();
-          }
-        }
-      }catch(err){
-        console.warn('ImageCapture niet beschikbaar:', err);
-        imageCapture = null;
-      }
-    }
-
-    flashMode = 'off';
-    setFlashButtonState();
-  }
-
-  async function blobToImage(blob){
-    return new Promise((resolve,reject)=>{
-      const url = URL.createObjectURL(blob);
-      const image = new Image();
-      image.onload = ()=>{
-        URL.revokeObjectURL(url);
-        resolve(image);
-      };
-      image.onerror = err=>{
-        URL.revokeObjectURL(url);
-        reject(err);
-      };
-      image.src = url;
-    });
-  }
-
-  function setCapturedImageFromImage(image){
-    img=image;
-
-    const maxDim=4000;
-    const scale=Math.min(1,maxDim/Math.max(image.naturalWidth,image.naturalHeight));
-    canvas.width=Math.round(image.naturalWidth*scale);
-    canvas.height=Math.round(image.naturalHeight*scale);
-
-    rects=[];
-    selected=-1;
-    drawState=null;
-    moveState=null;
-    resizeState=null;
-    recolorMode=false;
-
-    emptyState.hidden=true;
-    stage.hidden=false;
-    resetColorSelection();
-    redraw();
-    updateButtons();
-  }
-
-  async function openCamera(){
-    cameraMsg.textContent='';
-    flashBtn.style.display='none';
-    try{
-      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-        throw new Error('Camera-API niet beschikbaar');
-      }
-
-      stream=await navigator.mediaDevices.getUserMedia({
-        video:{
-          facingMode:{ideal:'environment'},
-          width:{ideal:3840},
-          height:{ideal:2160}
-        },
-        audio:false
-      });
-
-      cameraTrack = stream.getVideoTracks()[0] || null;
-      if(cameraTrack){
-        await optimizeCamera(cameraTrack);
-      }
-
-      cameraVideo.srcObject=stream;
-      cameraScreen.classList.add('open');
-      await cameraVideo.play();
-    }catch(err){
-      cameraScreen.classList.remove('open');
-      showStatus('Camera kon niet geopend worden. Controleer cameratoestemming.');
-      console.error(err);
-    }
-  }
-
-  function closeCamera(){
-    // Tracks stoppen schakelt ook torch/flits-preview uit.
-    if(stream){
-      stream.getTracks().forEach(t=>t.stop());
-      stream=null;
-    }
-    cameraTrack=null;
-    imageCapture=null;
-    photoCapabilities=null;
-    trackCapabilities=null;
-    realFlashModes=[];
-    torchSupported=false;
-    flashMode='off';
-    cameraVideo.srcObject=null;
-    flashBtn.style.display='none';
-    cameraScreen.classList.remove('open');
-  }
-
-  async function capturePhoto(){
-    if(!cameraVideo.videoWidth || !cameraVideo.videoHeight) return;
-
-    shutterBtn.disabled = true;
-    cameraMsg.textContent = 'Foto nemen…';
-
-    try{
-      let photoBlob = null;
-
-      // Voorkeur: echte still photo via ImageCapture.takePhoto().
-      if(imageCapture && imageCapture.takePhoto){
-        const settings = {};
-
-        if(realFlashModes.includes(flashMode)){
-          settings.fillLightMode = flashMode;
-        }else if(flashMode === 'off' && realFlashModes.includes('off')){
-          settings.fillLightMode = 'off';
-        }
-
-        // Als "Flits" gevraagd is maar de browser geen echte flash-mode aanbiedt,
-        // gebruiken we torch kort als fallback.
-        let torchWasUsed = false;
-        if(flashMode === 'flash' && !realFlashModes.includes('flash') && torchSupported){
-          torchWasUsed = await setTorch(true);
-          if(torchWasUsed) await new Promise(r=>setTimeout(r,180));
-        }
-
-        try{
-          photoBlob = await imageCapture.takePhoto(settings);
-        }finally{
-          if(torchWasUsed){
-            try{ await setTorch(false); }catch(_){}
-          }
-        }
-      }
-
-      if(photoBlob){
-        const capturedImage = await blobToImage(photoBlob);
-        closeCamera();
-        setCapturedImageFromImage(capturedImage);
-        return;
-      }
-
-      throw new Error('Geen ImageCapture still-photo');
-    }catch(err){
-      console.warn('Still-photo fallback naar videoframe:', err);
-
-      // Fallback: scherpste beschikbare videoframe.
-      let torchWasUsed = false;
-      try{
-        if(flashMode === 'flash' && torchSupported){
-          torchWasUsed = await setTorch(true);
-          if(torchWasUsed) await new Promise(r=>setTimeout(r,180));
-        }
-
-        const snap=document.createElement('canvas');
-        snap.width=cameraVideo.videoWidth;
-        snap.height=cameraVideo.videoHeight;
-        const sctx=snap.getContext('2d');
-        sctx.drawImage(cameraVideo,0,0,snap.width,snap.height);
-
-        closeCamera();
-        setCapturedImageFromCanvas(snap);
-      }finally{
-        if(torchWasUsed && cameraTrack){
-          try{ await setTorch(false); }catch(_){}
-        }
-      }
-    }finally{
-      shutterBtn.disabled = false;
-      cameraMsg.textContent = '';
-    }
-  }
-
-  cameraBtn.addEventListener('click',openCamera);
-  retakeBtn.addEventListener('click',openCamera);
-  closeCameraBtn.addEventListener('click',closeCamera);
-  shutterBtn.addEventListener('click',capturePhoto);
-  flashBtn.addEventListener('click',cycleFlashMode);
+  nativeCapture.addEventListener('change',()=>{
+    const file=nativeCapture.files && nativeCapture.files[0];
+    if(file) loadCapturedFile(file);
+  });
 
   colorBtns.forEach(btn=>{
     btn.addEventListener('click',e=>{
@@ -787,7 +512,7 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
       a.href=url;a.download=filename;
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(url),5000);
-    },'image/jpeg',0.94);
+    },'image/jpeg',0.96);
   });
 
   // PWA install prompt
@@ -809,6 +534,8 @@ canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;back
     installBtn.style.display='none';
     deferredInstallPrompt=null;
   });
+
+  window.addEventListener('pagehide',releaseCurrentObjectUrl);
 
   // Service worker
   if('serviceWorker' in navigator){
