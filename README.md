@@ -31,3 +31,11 @@ Belangrijk: de camera via `getUserMedia` werkt op een beveiligde context (HTTPS)
 - service-worker.js
 - icon-192.png
 - icon-512.png
+
+
+## Versie 2
+- Probeert continue autofocus te activeren als camera + browser dit ondersteunen.
+- Gebruikt `ImageCapture.takePhoto()` voor een echte still photo wanneer beschikbaar.
+- Valt automatisch terug op een hoog-resolutie videoframe als still capture niet beschikbaar is.
+- Flitsknop in de camera: Uit / Auto / Flits, afhankelijk van de capabilities.
+- Als echte flash niet beschikbaar is maar torch wel, gebruikt Flits kort de LED als fallback.

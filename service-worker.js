@@ -1,4 +1,4 @@
-const CACHE_NAME = 'foto-kader-v1';
+const CACHE_NAME = 'foto-kader-v2';
 const APP_SHELL = [
   './',
   './index.html',
