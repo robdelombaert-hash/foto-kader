@@ -1,1 +1,33 @@
-# foto-kader
+# Foto Kader PWA
+
+Dit pakket is klaar om als kleine Progressive Web App te hosten.
+
+## Wat zit erin
+- Camera rechtstreeks in de app via `getUserMedia`
+- Geen extra Samsung "foto gebruiken / opnieuw"-stap vanuit de native camera-app
+- Groene, oranje en rode kaders
+- Kaders selecteren, verslepen en via hoekpunten vergroten/verkleinen
+- Selectie verwijderen / alles verwijderen
+- Tijdelijke modus "Kleur aanpassen"
+- JPG lokaal opslaan
+- PWA-manifest met app-icoon
+- Service worker zodat de app na eerste succesvolle online laadbeurt offline kan openen
+
+## Online zetten
+Upload alle bestanden in deze map naar één HTTPS-site, bijvoorbeeld GitHub Pages.
+
+Belangrijk: de camera via `getUserMedia` werkt op een beveiligde context (HTTPS). Na installatie/cache kan de app offline blijven werken, terwijl de app-origin dezelfde HTTPS-origin blijft.
+
+## Installeren op Samsung / Chrome
+1. Open de HTTPS-link in Chrome.
+2. Geef cameratoestemming wanneer gevraagd.
+3. Gebruik "Installeren" als die knop verschijnt, of Chrome-menu > Installeren / Toevoegen aan startscherm.
+4. Open de app nadien via het app-icoon.
+5. Test offline door vliegtuigmodus aan te zetten nadat de app minstens één keer volledig online geopend is.
+
+## Bestanden
+- index.html
+- manifest.webmanifest
+- service-worker.js
+- icon-192.png
+- icon-512.png

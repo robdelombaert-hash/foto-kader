@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#111111">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Foto Kader</title>
+<style>
+:root{
+  --bg:#111;--panel:#1d1d1d;--panel2:#181818;--btn:#333;--light:#f4f4f4;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:#fff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{overscroll-behavior-y:contain}
+.app{min-height:100dvh;display:flex;flex-direction:column}
+header{padding:14px 16px 10px;display:flex;align-items:center;gap:10px}
+h1{font-size:19px;margin:0;flex:1}
+.installBtn{padding:8px 11px;min-height:36px;font-size:13px;display:none}
+
+.toolbar,.selectionBar,.bottom{
+  display:flex;gap:8px;flex-wrap:wrap;padding:10px 12px;
+  background:var(--panel);border-top:1px solid #2a2a2a;border-bottom:1px solid #2a2a2a
+}
+.selectionBar,.bottom{background:var(--panel2)}
+
+button{
+  border:0;border-radius:12px;padding:11px 14px;font-size:15px;font-weight:700;
+  background:var(--btn);color:#fff;min-height:44px;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px
+}
+button:disabled{opacity:.45}
+.cameraBtn{background:var(--light);color:#111}
+.colorBtn{width:46px;min-width:46px;padding:0;border:3px solid transparent;position:relative}
+.colorBtn.chosen{border-color:#fff;box-shadow:0 0 0 2px #000 inset}
+.colorBtn.armed::after{content:"";position:absolute;inset:-7px;border:3px solid #fff;border-radius:15px;pointer-events:none}
+.green{background:#28c840}.orange{background:#ff9500}.red{background:#ff3b30}
+.spacer{flex:1}
+.recolorActive{background:#f4f4f4 !important;color:#111 !important;box-shadow:0 0 0 2px #fff inset}
+
+.photoArea{background:#080808;padding:12px;display:flex;justify-content:center;align-items:center;min-height:260px;overflow:hidden}
+.stage{position:relative;display:inline-block;max-width:100%;line-height:0}
+canvas{display:block;max-width:100%;max-height:72dvh;width:auto;height:auto;background:#222;border-radius:8px;touch-action:pan-y pinch-zoom}
+.empty{color:#bbb;text-align:center;padding:24px 18px;line-height:1.35;font-size:15px}
+
+.selectionOverlay{position:absolute;display:none;border:2px dashed rgba(255,255,255,.95);pointer-events:auto;touch-action:none;cursor:move}
+.handle{position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;border:2px solid #111;transform:translate(-50%,-50%);touch-action:none}
+.handle.nw{left:0;top:0}.handle.ne{left:100%;top:0}.handle.sw{left:0;top:100%}.handle.se{left:100%;top:100%}
+
+.status{font-size:13px;padding:8px 12px;text-align:center;background:#202020;color:#ddd;display:none}
+.bottom{position:sticky;bottom:0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.bottom button{flex:1}
+.primary{background:var(--light);color:#111}
+.danger{background:#4a2020}
+
+/* In-app camera */
+.cameraScreen{
+  position:fixed;inset:0;z-index:1000;background:#000;
+  display:none;flex-direction:column;
+}
+.cameraScreen.open{display:flex}
+.videoWrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000}
+#cameraVideo{width:100%;height:100%;object-fit:cover}
+.cameraTop{position:absolute;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;display:flex;justify-content:flex-end;background:linear-gradient(rgba(0,0,0,.55),transparent)}
+.cameraBottom{padding:14px 14px calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:center;align-items:center;gap:20px;background:#050505}
+.shutter{width:72px;height:72px;border-radius:50%;background:#fff;border:6px solid #777;padding:0}
+.closeCam{background:rgba(40,40,40,.8);min-width:48px}
+.cameraMsg{font-size:13px;color:#ddd;position:absolute;bottom:10px;left:10px;right:10px;text-align:center;text-shadow:0 1px 2px #000}
+
+@media(max-width:560px){
+  button{font-size:14px;padding:10px 12px}
+  .spacer{display:none}
+  .bottom button{flex:1 1 calc(50% - 8px)}
+  .handle{width:20px;height:20px}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>Foto Kader</h1>
+    <button id="installBtn" class="installBtn">Installeren</button>
+  </header>
+
+  <div class="toolbar">
+    <button type="button" id="cameraBtn" class="cameraBtn">📷 Foto nemen</button>
+
+    <button type="button" class="colorBtn green" data-color="#28c840" aria-label="Groen"></button>
+    <button type="button" class="colorBtn orange" data-color="#ff9500" aria-label="Oranje"></button>
+    <button type="button" class="colorBtn red" data-color="#ff3b30" aria-label="Rood"></button>
+
+    <div class="spacer"></div>
+    <button type="button" id="undoBtn" disabled>↶ Ongedaan</button>
+    <button type="button" id="clearBtn" disabled>Alles verwijderen</button>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <div class="photoArea">
+    <div id="emptyState" class="empty">Nog geen foto genomen.</div>
+
+    <div id="stage" class="stage" hidden>
+      <canvas id="canvas"></canvas>
+      <div id="selectionOverlay" class="selectionOverlay">
+        <div class="handle nw" data-handle="nw"></div>
+        <div class="handle ne" data-handle="ne"></div>
+        <div class="handle sw" data-handle="sw"></div>
+        <div class="handle se" data-handle="se"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="selectionBar">
+    <button type="button" id="deleteSelectedBtn" disabled>🗑 Selectie verwijderen</button>
+    <button type="button" id="recolorSelectedBtn" disabled>🎨 Kleur aanpassen</button>
+  </div>
+
+  <div class="bottom">
+    <button type="button" id="retakeBtn" class="danger" disabled>📷 Nieuwe foto</button>
+    <button type="button" id="saveBtn" class="primary" disabled>💾 Opslaan</button>
+  </div>
+</div>
+
+<div id="cameraScreen" class="cameraScreen">
+  <div class="videoWrap">
+    <video id="cameraVideo" autoplay playsinline muted></video>
+    <div class="cameraTop">
+      <button id="closeCameraBtn" class="closeCam">✕</button>
+    </div>
+    <div id="cameraMsg" class="cameraMsg"></div>
+  </div>
+  <div class="cameraBottom">
+    <button id="shutterBtn" class="shutter" aria-label="Foto nemen"></button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const emptyState = document.getElementById('emptyState');
+  const overlay = document.getElementById('selectionOverlay');
+  const handles = [...overlay.querySelectorAll('.handle')];
+
+  const cameraBtn = document.getElementById('cameraBtn');
+  const retakeBtn = document.getElementById('retakeBtn');
+  const cameraScreen = document.getElementById('cameraScreen');
+  const cameraVideo = document.getElementById('cameraVideo');
+  const closeCameraBtn = document.getElementById('closeCameraBtn');
+  const shutterBtn = document.getElementById('shutterBtn');
+  const cameraMsg = document.getElementById('cameraMsg');
+
+  const undoBtn = document.getElementById('undoBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+  const recolorSelectedBtn = document.getElementById('recolorSelectedBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const status = document.getElementById('status');
+  const colorBtns = [...document.querySelectorAll('.colorBtn')];
+  const installBtn = document.getElementById('installBtn');
+
+  let img = null;
+  let rects = [];
+  let selected = -1;
+  let activeColor = null;
+  let drawArmed = false;
+  let drawState = null;
+  let moveState = null;
+  let resizeState = null;
+  let recolorMode = false;
+  let stream = null;
+  let deferredInstallPrompt = null;
+
+  function showStatus(t){
+    status.textContent=t;
+    status.style.display='block';
+    clearTimeout(showStatus.timer);
+    showStatus.timer=setTimeout(()=>status.style.display='none',1800);
+  }
+
+  function lineWidth(){ return Math.max(11, Math.round(canvas.width/110)); }
+  function hitMargin(){ return Math.max(20, Math.round(canvas.width/90)); }
+
+  function setDrawArmed(v){
+    drawArmed=!!v && !!activeColor;
+    colorBtns.forEach(b=>b.classList.toggle('armed',drawArmed && b.dataset.color===activeColor));
+    canvas.style.touchAction=drawArmed ? 'none' : 'pan-y pinch-zoom';
+  }
+
+  function updateButtons(){
+    const hasImage=!!img;
+    const hasRects=rects.length>0;
+    const hasSelected=selected>=0;
+
+    undoBtn.disabled=!hasRects;
+    clearBtn.disabled=!hasRects;
+    deleteSelectedBtn.disabled=!hasSelected;
+    recolorSelectedBtn.disabled=!hasSelected;
+    recolorSelectedBtn.classList.toggle('recolorActive',recolorMode && hasSelected);
+    retakeBtn.disabled=!hasImage;
+    saveBtn.disabled=!hasImage;
+
+    if(!hasSelected && recolorMode){
+      recolorMode=false;
+      recolorSelectedBtn.classList.remove('recolorActive');
+    }
+    updateOverlay();
+  }
+
+  function redraw(){
+    if(!img) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+
+    for(const r of rects){
+      ctx.save();
+      ctx.strokeStyle=r.color;
+      ctx.lineWidth=lineWidth();
+      ctx.lineJoin='round';
+      ctx.strokeRect(r.x,r.y,r.w,r.h);
+      ctx.restore();
+    }
+
+    if(drawState?.preview){
+      const r=drawState.preview;
+      ctx.save();
+      ctx.strokeStyle=r.color;
+      ctx.globalAlpha=.9;
+      ctx.lineWidth=lineWidth();
+      ctx.lineJoin='round';
+      ctx.strokeRect(r.x,r.y,r.w,r.h);
+      ctx.restore();
+    }
+    requestAnimationFrame(updateOverlay);
+  }
+
+  function canvasPoint(clientX,clientY){
+    const b=canvas.getBoundingClientRect();
+    return {
+      x:(clientX-b.left)*(canvas.width/b.width),
+      y:(clientY-b.top)*(canvas.height/b.height)
+    };
+  }
+
+  function normalize(x1,y1,x2,y2,color){
+    return {x:Math.min(x1,x2),y:Math.min(y1,y2),w:Math.abs(x2-x1),h:Math.abs(y2-y1),color};
+  }
+
+  function clamp(r){
+    const min=18;
+    r.w=Math.max(min,r.w);r.h=Math.max(min,r.h);
+    r.x=Math.max(0,Math.min(r.x,canvas.width-r.w));
+    r.y=Math.max(0,Math.min(r.y,canvas.height-r.h));
+  }
+
+  function pointHitsRect(p,r){
+    const m=hitMargin();
+    return p.x>=r.x-m && p.x<=r.x+r.w+m && p.y>=r.y-m && p.y<=r.y+r.h+m;
+  }
+
+  function topHit(p){
+    for(let i=rects.length-1;i>=0;i--){
+      if(pointHitsRect(p,rects[i])) return i;
+    }
+    return -1;
+  }
+
+  function updateOverlay(){
+    if(selected<0 || !rects[selected] || !img){
+      overlay.style.display='none';
+      return;
+    }
+    const r=rects[selected];
+    const cb=canvas.getBoundingClientRect();
+    const sb=stage.getBoundingClientRect();
+    const sx=cb.width/canvas.width;
+    const sy=cb.height/canvas.height;
+
+    overlay.style.display='block';
+    overlay.style.left=(cb.left-sb.left+r.x*sx)+'px';
+    overlay.style.top=(cb.top-sb.top+r.y*sy)+'px';
+    overlay.style.width=(r.w*sx)+'px';
+    overlay.style.height=(r.h*sy)+'px';
+  }
+
+  window.addEventListener('resize',()=>requestAnimationFrame(updateOverlay));
+
+  function resetColorSelection(){
+    activeColor=null;
+    recolorMode=false;
+    drawArmed=false;
+    colorBtns.forEach(b=>{b.classList.remove('chosen');b.classList.remove('armed')});
+    recolorSelectedBtn.classList.remove('recolorActive');
+    canvas.style.touchAction='pan-y pinch-zoom';
+  }
+
+  function setCapturedImageFromCanvas(sourceCanvas){
+    const image=new Image();
+    image.onload=()=>{
+      img=image;
+      const maxDim=2600;
+      const scale=Math.min(1,maxDim/Math.max(image.naturalWidth,image.naturalHeight));
+      canvas.width=Math.round(image.naturalWidth*scale);
+      canvas.height=Math.round(image.naturalHeight*scale);
+
+      rects=[];
+      selected=-1;
+      drawState=null;
+      moveState=null;
+      resizeState=null;
+      recolorMode=false;
+
+      emptyState.hidden=true;
+      stage.hidden=false;
+      resetColorSelection();
+      redraw();
+      updateButtons();
+    };
+    image.src=sourceCanvas.toDataURL('image/jpeg',0.95);
+  }
+
+  async function openCamera(){
+    cameraMsg.textContent='';
+    try{
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        throw new Error('Camera-API niet beschikbaar');
+      }
+
+      stream=await navigator.mediaDevices.getUserMedia({
+        video:{
+          facingMode:{ideal:'environment'},
+          width:{ideal:1920},
+          height:{ideal:1080}
+        },
+        audio:false
+      });
+
+      cameraVideo.srcObject=stream;
+      cameraScreen.classList.add('open');
+      await cameraVideo.play();
+    }catch(err){
+      cameraScreen.classList.remove('open');
+      showStatus('Camera kon niet geopend worden. Controleer cameratoestemming.');
+      console.error(err);
+    }
+  }
+
+  function closeCamera(){
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream=null;
+    }
+    cameraVideo.srcObject=null;
+    cameraScreen.classList.remove('open');
+  }
+
+  function capturePhoto(){
+    if(!cameraVideo.videoWidth || !cameraVideo.videoHeight) return;
+
+    const snap=document.createElement('canvas');
+    snap.width=cameraVideo.videoWidth;
+    snap.height=cameraVideo.videoHeight;
+    const sctx=snap.getContext('2d');
+    sctx.drawImage(cameraVideo,0,0,snap.width,snap.height);
+
+    closeCamera();
+    setCapturedImageFromCanvas(snap);
+  }
+
+  cameraBtn.addEventListener('click',openCamera);
+  retakeBtn.addEventListener('click',openCamera);
+  closeCameraBtn.addEventListener('click',closeCamera);
+  shutterBtn.addEventListener('click',capturePhoto);
+
+  colorBtns.forEach(btn=>{
+    btn.addEventListener('click',e=>{
+      e.preventDefault();
+      activeColor=btn.dataset.color;
+
+      colorBtns.forEach(b=>{b.classList.remove('chosen');b.classList.remove('armed')});
+      btn.classList.add('chosen');
+
+      if(recolorMode && selected>=0){
+        rects[selected].color=activeColor;
+        recolorMode=false;
+        setDrawArmed(false);
+        redraw();
+        updateButtons();
+        return;
+      }
+
+      setDrawArmed(true);
+      updateButtons();
+    });
+  });
+
+  canvas.addEventListener('pointerdown',e=>{
+    if(!img || !drawArmed) return;
+    e.preventDefault();
+    const p=canvasPoint(e.clientX,e.clientY);
+    drawState={pointerId:e.pointerId,start:p,preview:{x:p.x,y:p.y,w:0,h:0,color:activeColor}};
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener('pointermove',e=>{
+    if(!drawState || e.pointerId!==drawState.pointerId) return;
+    e.preventDefault();
+    const p=canvasPoint(e.clientX,e.clientY);
+    drawState.preview=normalize(drawState.start.x,drawState.start.y,p.x,p.y,activeColor);
+    redraw();
+  });
+
+  function finishDraw(e){
+    if(!drawState || e.pointerId!==drawState.pointerId) return;
+    const r=drawState.preview;
+    drawState=null;
+
+    if(r && r.w>18 && r.h>18){
+      rects.push({...r});
+      selected=rects.length-1;
+    }
+
+    setDrawArmed(false);
+    redraw();
+    updateButtons();
+  }
+  canvas.addEventListener('pointerup',finishDraw);
+  canvas.addEventListener('pointercancel',e=>{
+    if(drawState && e.pointerId===drawState.pointerId){
+      drawState=null;setDrawArmed(false);redraw();
+    }
+  });
+
+  canvas.addEventListener('click',e=>{
+    if(!img || drawArmed || drawState) return;
+    const p=canvasPoint(e.clientX,e.clientY);
+    selected=topHit(p);
+    if(selected<0) recolorMode=false;
+    redraw();
+    updateButtons();
+  });
+
+  overlay.addEventListener('pointerdown',e=>{
+    if(selected<0 || e.target.classList.contains('handle')) return;
+    e.preventDefault();e.stopPropagation();
+    const p=canvasPoint(e.clientX,e.clientY);
+    const r=rects[selected];
+    moveState={pointerId:e.pointerId,index:selected,offsetX:p.x-r.x,offsetY:p.y-r.y};
+    overlay.setPointerCapture(e.pointerId);
+  });
+
+  overlay.addEventListener('pointermove',e=>{
+    if(!moveState || e.pointerId!==moveState.pointerId) return;
+    e.preventDefault();
+    const p=canvasPoint(e.clientX,e.clientY);
+    const r=rects[moveState.index];
+    r.x=p.x-moveState.offsetX;r.y=p.y-moveState.offsetY;
+    clamp(r);redraw();
+  });
+
+  overlay.addEventListener('pointerup',e=>{
+    if(moveState && e.pointerId===moveState.pointerId){
+      moveState=null;redraw();updateButtons();
+    }
+  });
+
+  function opposite(r,h){
+    if(h==='nw') return {x:r.x+r.w,y:r.y+r.h};
+    if(h==='ne') return {x:r.x,y:r.y+r.h};
+    if(h==='sw') return {x:r.x+r.w,y:r.y};
+    return {x:r.x,y:r.y};
+  }
+
+  handles.forEach(handle=>{
+    handle.addEventListener('pointerdown',e=>{
+      if(selected<0) return;
+      e.preventDefault();e.stopPropagation();
+      const h=handle.dataset.handle;
+      resizeState={pointerId:e.pointerId,index:selected,anchor:opposite(rects[selected],h),color:rects[selected].color};
+      handle.setPointerCapture(e.pointerId);
+    });
+
+    handle.addEventListener('pointermove',e=>{
+      if(!resizeState || e.pointerId!==resizeState.pointerId) return;
+      e.preventDefault();e.stopPropagation();
+      const p=canvasPoint(e.clientX,e.clientY);
+      const a=resizeState.anchor;
+      let r=normalize(a.x,a.y,p.x,p.y,resizeState.color);
+      clamp(r);rects[resizeState.index]=r;redraw();
+    });
+
+    handle.addEventListener('pointerup',e=>{
+      if(resizeState && e.pointerId===resizeState.pointerId){
+        resizeState=null;redraw();updateButtons();
+      }
+    });
+  });
+
+  undoBtn.addEventListener('click',()=>{
+    if(!rects.length) return;
+    rects.pop();
+    if(selected>=rects.length) selected=-1;
+    setDrawArmed(false);redraw();updateButtons();
+  });
+
+  clearBtn.addEventListener('click',()=>{
+    rects=[];selected=-1;recolorMode=false;
+    setDrawArmed(false);redraw();updateButtons();
+  });
+
+  deleteSelectedBtn.addEventListener('click',()=>{
+    if(selected<0) return;
+    rects.splice(selected,1);
+    selected=-1;recolorMode=false;
+    redraw();updateButtons();
+  });
+
+  recolorSelectedBtn.addEventListener('click',()=>{
+    if(selected<0) return;
+    recolorMode=!recolorMode;
+    setDrawArmed(false);
+    updateButtons();
+  });
+
+  saveBtn.addEventListener('click',()=>{
+    if(!img) return;
+    redraw();
+
+    canvas.toBlob(blob=>{
+      if(!blob){showStatus('Opslaan mislukt');return}
+
+      const d=new Date();
+      const stamp=
+        d.getFullYear()+
+        String(d.getMonth()+1).padStart(2,'0')+
+        String(d.getDate()).padStart(2,'0')+'_'
+        +String(d.getHours()).padStart(2,'0')
+        +String(d.getMinutes()).padStart(2,'0')
+        +String(d.getSeconds()).padStart(2,'0');
+
+      const filename=`foto_kaders_${stamp}.jpg`;
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;a.download=filename;
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+    },'image/jpeg',0.94);
+  });
+
+  // PWA install prompt
+  window.addEventListener('beforeinstallprompt',e=>{
+    e.preventDefault();
+    deferredInstallPrompt=e;
+    installBtn.style.display='inline-flex';
+  });
+
+  installBtn.addEventListener('click',async()=>{
+    if(!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt=null;
+    installBtn.style.display='none';
+  });
+
+  window.addEventListener('appinstalled',()=>{
+    installBtn.style.display='none';
+    deferredInstallPrompt=null;
+  });
+
+  // Service worker
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',()=>{
+      navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+    });
+  }
+
+  updateButtons();
+})();
+</script>
+</body>
+</html>
